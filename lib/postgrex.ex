@@ -33,6 +33,8 @@ defmodule Postgrex do
   """
   @type conn :: DBConnection.conn()
 
+  @type password_provider :: (() -> iodata) | {module(), atom(), [term()]}
+
   @type start_option ::
           {:hostname, String.t()}
           | {:endpoints, [tuple()]}
@@ -42,12 +44,14 @@ defmodule Postgrex do
           | {:database, String.t()}
           | {:username, String.t()}
           | {:password, String.t()}
+          | {:password_provider, password_provider}
           | {:parameters, keyword}
           | {:timeout, timeout}
           | {:connect_timeout, timeout}
           | {:handshake_timeout, timeout}
           | {:ping_timeout, timeout}
           | {:ssl, boolean | [:ssl.tls_client_option()]}
+          | {:ssl_profile, :strict | :cloud}
           | {:socket_options, [:gen_tcp.connect_option()]}
           | {:prepare, :named | :unnamed}
           | {:transactions, :strict | :naive}
@@ -102,6 +106,11 @@ defmodule Postgrex do
 
     * `:password` - User password (default: PGPASSWORD env variable);
 
+    * `:password_provider` - A function or MFA tuple that returns the password at
+      connection time. This takes precedence over `:password`. Useful for IAM tokens,
+      rotating credentials, or vault integration. The function is called on each
+      (re)connect. Example: `{MyApp.IAM, :get_token, []}` or `fn -> get_token() end`;
+
     * `:parameters` - Keyword list of connection parameters;
 
     * `:timeout` - Socket receive timeout when idle in milliseconds (default:
@@ -123,6 +132,12 @@ defmodule Postgrex do
       which emits a warning. Instead, prefer to set it to a keyword list, with either
       `:cacerts` or `:cacertfile` set to a CA trust store, to enable server certificate
       verification. Defaults to `false`;
+
+    * `:ssl_profile` - Applies a predefined SSL configuration profile when `:ssl` is `true`
+      but `:ssl_opts` is not provided. Available profiles:
+      * `:strict` - Enables server certificate verification with system CAs and SNI
+      * `:cloud` - Like `:strict` but optimized for cloud provider certificates
+      This option is ignored if `:ssl_opts` is explicitly provided;
 
     * `:socket_options` - Options to be given to the underlying socket
       (applies to both TCP and UNIX sockets);

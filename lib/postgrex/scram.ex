@@ -3,6 +3,19 @@ defmodule Postgrex.SCRAM do
 
   alias Postgrex.SCRAM
 
+  defp get_password(opts) do
+    case Keyword.get(opts, :password_provider) do
+      nil ->
+        Keyword.fetch!(opts, :password)
+
+      fun when is_function(fun, 0) ->
+        fun.()
+
+      {mod, fun, args} ->
+        apply(mod, fun, args)
+    end
+  end
+
   @hash_length 32
   @nonce_length 24
   @nonce_rand_bytes div(@nonce_length * 6, 8)
@@ -21,7 +34,7 @@ defmodule Postgrex.SCRAM do
     server_i = String.to_integer(server[?i])
 
     # Create and cache client and server keys if they don't already exist
-    pass = Keyword.fetch!(opts, :password)
+    pass = get_password(opts)
     cache_key = create_cache_key(pass, server_s, server_i)
 
     {client_key, _server_key} =
@@ -60,7 +73,7 @@ defmodule Postgrex.SCRAM do
     {:ok, server_sig} = Base.decode64(server_v)
 
     # Construct expected server signature
-    pass = Keyword.fetch!(opts, :password)
+    pass = get_password(opts)
     cache_key = create_cache_key(pass, scram_state.salt, scram_state.iterations)
     {_client_key, server_key} = SCRAM.LockedCache.get(cache_key)
     expected_server_sig = hmac(:sha256, server_key, scram_state.auth_message)

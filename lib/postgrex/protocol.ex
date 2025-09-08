@@ -87,6 +87,9 @@ defmodule Postgrex.Protocol do
     disable_composite_types = opts[:disable_composite_types] || false
     parameters = opts[:parameters] || []
 
+    ssl_profile = opts[:ssl_profile]
+    hostname = opts[:hostname]
+
     {ssl_opts, opts} =
       case Keyword.pop(opts, :ssl, false) do
         {false, opts} ->
@@ -95,7 +98,10 @@ defmodule Postgrex.Protocol do
         {true, opts} ->
           case Keyword.pop(opts, :ssl_opts) do
             {nil, opts} ->
-              {[cacerts: :public_key.cacerts_get()] ++ default_ssl_opts(), opts}
+              # Apply profile if set, otherwise use default
+              ssl_opts = Postgrex.TLS.apply_profile(ssl_profile, nil, hostname)
+              ssl_opts = ssl_opts || ([cacerts: :public_key.cacerts_get()] ++ default_ssl_opts())
+              {ssl_opts, opts}
 
             {ssl_opts, opts} ->
               Logger.warning(":ssl_opts is deprecated, pass opts to :ssl instead")
@@ -862,6 +868,19 @@ defmodule Postgrex.Protocol do
 
   ## auth
 
+  defp get_password(opts) do
+    case Keyword.get(opts, :password_provider) do
+      nil ->
+        Keyword.fetch!(opts, :password)
+
+      fun when is_function(fun, 0) ->
+        fun.()
+
+      {mod, fun, args} ->
+        apply(mod, fun, args)
+    end
+  end
+
   defp auth_recv(s, status, buffer) do
     case msg_recv(s, :infinity, buffer) do
       {:ok, msg_auth(type: :ok), buffer} ->
@@ -891,13 +910,13 @@ defmodule Postgrex.Protocol do
   end
 
   defp auth_cleartext(s, %{opts: opts} = status, buffer) do
-    pass = Keyword.fetch!(opts, :password)
+    pass = get_password(opts)
     auth_send(s, msg_password(pass: [pass, 0]), status, buffer)
   end
 
   defp auth_md5(s, %{opts: opts} = status, salt, buffer) do
     user = Keyword.fetch!(opts, :username)
-    pass = Keyword.fetch!(opts, :password)
+    pass = get_password(opts)
 
     digest = :erlang.md5([pass, user]) |> Base.encode16(case: :lower)
     digest = :erlang.md5([digest, salt]) |> Base.encode16(case: :lower)
