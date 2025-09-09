@@ -76,6 +76,7 @@ defmodule Postgrex.Protocol do
     # Trap exits so that DBConnection calls `disconnect` on unexpected shutdowns
     Process.flag(:trap_exit, true)
 
+    opts = resolve_dynamic_config(opts)
     endpoints = endpoints(opts)
 
     timeout = opts[:timeout] || @timeout
@@ -160,6 +161,17 @@ defmodule Postgrex.Protocol do
     }
 
     connect_endpoints(endpoints, sock_opts ++ @sock_opts, connect_timeout, s, status, [])
+  end
+
+  defp resolve_dynamic_config(opts) do
+    case Keyword.get(opts, :config_resolver) do
+      nil -> opts
+      resolver_fun when is_function(resolver_fun, 1) ->
+        static_opts = Keyword.delete(opts, :config_resolver)
+        resolver_fun.(static_opts)
+      _ ->
+        raise ArgumentError, ":config_resolver must be a function that takes opts and returns resolved opts"
+    end
   end
 
   defp default_ssl_opts do

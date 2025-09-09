@@ -53,6 +53,7 @@ defmodule Postgrex do
           | {:transactions, :strict | :naive}
           | {:types, module}
           | {:disconnect_on_error_codes, [atom]}
+          | {:config_resolver, (keyword -> keyword)}
           | DBConnection.start_option()
 
   @type option ::
@@ -166,7 +167,12 @@ defmodule Postgrex do
     * `:comment` - When a binary string is provided, appends the given text as a comment to the
       query.  This can be useful for tracing purposes, such as when using SQLCommenter or similar
       tools to track query performance and behavior. Note that including a comment disables query
-      caching since each query with a different comment is treated as unique (default: `nil`).
+      caching since each query with a different comment is treated as unique (default: `nil`);
+
+    * `:config_resolver` - A function that takes static connection options and returns 
+      resolved options. This is useful for dynamically providing connection parameters like 
+      certificates, passwords, or tokens. The function receives all connection options 
+      (except `:config_resolver` itself) and should return a keyword list of resolved options.
 
   `Postgrex` uses the `DBConnection` library and supports all `DBConnection`
   options like `:idle`, `:after_connect` etc. See `DBConnection.start_link/2`
@@ -197,6 +203,24 @@ defmodule Postgrex do
   The server name indication (SNI) will be automatically set based on the `:hostname`
   configuration, if one was provided. Other options, such as `depth: 3`, may be necessary
   depending on the server.
+
+  ## Dynamic connection configuration
+
+  For connections that require dynamic credentials (like cloud IAM authentication), use
+  a `:config_resolver` function:
+
+      resolver = fn opts ->
+        # Fetch fresh tokens/certificates here
+        opts
+        |> Keyword.put(:password, get_fresh_token())
+        |> Keyword.put(:ssl, get_fresh_ssl_config())
+      end
+
+      {:ok, pid} = Postgrex.start_link(
+        hostname: "db.example.com",
+        database: "mydb", 
+        config_resolver: resolver
+      )
 
   ## PgBouncer
 
